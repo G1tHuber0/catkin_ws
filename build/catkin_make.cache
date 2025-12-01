@@ -1,0 +1,2 @@
+turtlebot3_rl_nav
+-DCATKIN_DEVEL_PREFIX=/home/lst/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/lst/catkin_ws/install -G Unix Makefiles

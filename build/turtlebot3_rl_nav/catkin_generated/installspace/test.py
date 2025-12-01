@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rospy
+from turtlebot3_rl_nav.scripts.my_env import myEnv
+
+if __name__ == "__main__":
+    rospy.init_node("test_simple_env_reset")
+
+    env = myEnv()
+    print("Action space:", env.action_space)
+    print("Observation space:", env.observation_space)
+
+    for i in range(3):
+        print("\n===== RESET episode", i, "=====")
+        obs, info = env.reset()
+        print("obs shape:", obs.shape)
+        print("obs min/max:", obs.min(), obs.max())
+        print("info:", info)
+

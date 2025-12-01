@@ -1,0 +1,24 @@
+<launch>
+  <!-- 选择模型：burger -->
+  <arg name="model" default="burger" />
+  <!-- world 文件路径 -->
+  <arg name="world_name" default="$(find turtlebot3_rl_nav)/worlds/rl_world.world" />
+
+  <!-- 如果你习惯用环境变量 TURTLEBOT3_MODEL，也可以 export，一般不必须 -->
+  <env name="TURTLEBOT3_MODEL" value="$(arg model)"/>
+
+  <!-- 用 turtlebot3 的 urdf/xacro 生成 robot_description -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro'" />
+
+  <!-- 启动 Gazebo + 自定义 world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_name)" />
+    <arg name="paused" value="false" />
+    <arg name="use_sim_time" value="true" />
+  </include>
+
+  <!-- 在 world 里 spawn turtlebot3 -->
+  <node name="spawn_turtlebot3" pkg="gazebo_ros" type="spawn_model" output="screen"
+        args="-urdf -param robot_description -model turtlebot3 -x 0 -y 0 -z 0.1"/>
+</launch>
