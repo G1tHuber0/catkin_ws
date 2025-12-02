@@ -44,8 +44,8 @@ class myEnv(gym.Env):
         self.collision_distance = 0.18   # 判定碰撞的最小距离
         self.safe_distance = self.collision_distance + 0.1  # 安全距离
 
-        self.step_time = 0.1          # 每一步控制间隔 [s]，先别太小，方便看效果
-        self.max_episode_steps = 500  # 一局最多 500 步
+        self.step_time = 0.02          # 每一步控制间隔 [s]，先别太小，方便看效果
+        self.max_episode_steps = 1000  # 一局最多 500 步
 
         # ---------- 2. ROS 通信 ----------
         # 发布 /cmd_vel，保证发布消息是当前最新的
@@ -54,10 +54,13 @@ class myEnv(gym.Env):
         # 等待第一次 /scan，目的：
         #  - 确认话题存在
         #  - 得到 num_beams 和 range_max
+        
         rospy.loginfo("Waiting for first /scan ...")
         first_scan = rospy.wait_for_message(self.scan_topic, LaserScan)
+        self.beam_step = 2   # 或 4，先用 2 比较保守
         self.scan_range_max = first_scan.range_max          # 记录雷达最大量程
         self.num_beams = len(first_scan.ranges)     # 记录激光束数量
+        self.obs_beams = self.num_beams // self.beam_step
         self.last_scan = first_scan                 # 记录最新的激光雷达数据
 
         # 持续订阅 /scan，实时更新 self.last_scan
@@ -78,8 +81,8 @@ class myEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # 观测空间：num_beams 个 [0, 1] 浮点数
-        obs_dim = self.num_beams
+        # 观测空间：obs_beams 个 [0, 1] 浮点数
+        obs_dim = self.obs_beams
         self.observation_space = spaces.Box(
             low=0.0,
             high=1.0,                     #数据归一化
@@ -97,15 +100,19 @@ class myEnv(gym.Env):
 
     # ========= 工具函数：把 LaserScan -> np.array =========
     def _get_scan_obs(self):
-        """
-        将最新的 LaserScan 转成 0~1 的 numpy 数组
-        """
-        scan = np.array(self.last_scan.ranges, dtype=np.float32)        # 转成 numpy 数组
-        scan = np.where(np.isinf(scan), self.scan_range_max, scan)      # 替换 inf为最大量程
-        scan = np.where(np.isnan(scan), self.scan_range_max, scan)      # 替换 nan为最大量程
-        scan = np.clip(scan, 0.0, self.scan_range_max)                 # 裁剪到 [0, range_max]
-        scan_norm = scan / self.scan_range_max                      # 归一化到 [0, 1]
+        scan = np.array(self.last_scan.ranges, dtype=np.float32)
+
+        # 先做基本清洗
+        scan = np.where(np.isinf(scan), self.scan_range_max, scan)
+        scan = np.where(np.isnan(scan), self.scan_range_max, scan)
+        scan = np.clip(scan, 0.0, self.scan_range_max)
+
+        # ★ 关键：按步长降采样
+        scan = scan[::self.beam_step]   # 360 -> 180 或 90
+
+        scan_norm = scan / self.scan_range_max
         return scan_norm.astype(np.float32)
+
 
     # ========= Gymnasium 必需接口：先留空，下一步再实现 =========
     def reset(self, *, seed=None, options=None):
@@ -123,8 +130,6 @@ class myEnv(gym.Env):
                 rx = mx + dx
                 ry = my + dy
                 break
-        rx = np.random.uniform(-3.0, -2.0)
-        ry = np.random.uniform(-1.0, 1.0)
         ryaw = np.random.uniform(-np.pi, np.pi)
 
         self._set_model_pose(self.robot_model_name, rx, ry, ryaw, z=0.0)
@@ -147,10 +152,10 @@ class myEnv(gym.Env):
 
     def step(self, action):
         self.step_count += 1
-        #归一数据映射实际速度角度
+        #归一数据映射实际的动作
         a = np.clip(np.array(action, dtype=np.float32), -1.0, 1.0)
         v_cmd = (a[0]+1)/2 * self.max_lin_vel
-        w_cmd = a[1]/2 *self.max_ang_vel        
+        w_cmd = a[1] *self.max_ang_vel        
 
         cmd=Twist()
         cmd.linear.x = v_cmd
@@ -199,7 +204,7 @@ class myEnv(gym.Env):
         # 你也可以在 info 里放一些调试信息
         info["min_range"] = min_range
 
-        return obs, float(reward), terminated, truncated, info
+        return obs.astype(np.float32), float(reward), terminated, truncated, info
 
     def render(self):
         # Gazebo 自带可视化，这里不额外实现
